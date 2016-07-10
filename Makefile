@@ -1,6 +1,7 @@
 #
 # Makefile for the linux duet framework
 #
+CONFIG_MODULE_SIG=n
 
 KDIR ?= /lib/modules/`uname -r`/build
 
