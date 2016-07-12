@@ -59,39 +59,41 @@ static int process_inode(struct duet_task *task, struct inode *inode)
 /* Scan through the page cache, and populate the task's tree. */
 static int scan_page_cache(struct duet_task *task)
 {
-	struct inode *inode = NULL;
-	struct duet_bittree inodetree;
+	struct inode *inode, *prev = NULL;
 
-	bittree_init(&inodetree, 1, 0);
 	printk(KERN_INFO "duet: page cache scan started\n");
-again:
+
 	spin_lock(&task->f_sb->s_inode_list_lock);
 	list_for_each_entry(inode, &task->f_sb->s_inodes, i_sb_list) {
-		/* If we haven't seen this inode before, process it. */
-		if (bittree_check(&inodetree, DUET_GET_UUID(inode), 1, NULL) != 1) {
-			spin_lock(&inode->i_lock);
-			if (inode->i_state & DUET_INODE_FREEING) {
-				unsigned long long uuid = DUET_GET_UUID(inode);
-				spin_unlock(&inode->i_lock);
-				spin_unlock(&task->f_sb->s_inode_list_lock);
-				bittree_set_done(&inodetree, uuid, 1);
-			} else {
-				atomic_inc(&inode->i_count);
-				spin_unlock(&inode->i_lock);
-				spin_unlock(&task->f_sb->s_inode_list_lock);
+		struct address_space *mapping = inode->i_mapping;
 
-				process_inode(task, inode);
-				bittree_set_done(&inodetree, DUET_GET_UUID(inode), 1);
-				iput(inode);
-			}
-
-			goto again;
+		spin_lock(&inode->i_lock);
+		if (inode->i_state & DUET_INODE_FREEING || mapping->nrpages == 0) {
+			spin_unlock(&inode->i_lock);
+			continue;
 		}
+		atomic_inc(&inode->i_count);
+		spin_unlock(&inode->i_lock);
+		spin_unlock(&task->f_sb->s_inode_list_lock);
+
+		/*
+		 * We are holding a reference to inode so it won't be removed from
+		 * s_inodes list while we don't hold the s_inode_list_lock. We cannot
+		 * iput the inode now, though, as we may be holding the last reference.
+		 * We will iput it after the iteration is done.
+		 */
+
+		iput(prev);
+		prev = inode;
+
+		process_inode(task, inode);
+
+		spin_lock(&task->f_sb->s_inode_list_lock);
 	}
 	spin_unlock(&task->f_sb->s_inode_list_lock);
+	iput(prev);
 
 	printk(KERN_INFO "duet: page cache scan finished\n");
-	bittree_destroy(&inodetree);
 
 	return 0;
 }

@@ -20,8 +20,22 @@
 #include <linux/mm.h>
 #include "common.h"
 
-//duet_hook_t *duet_hook_fp = NULL;
-//EXPORT_SYMBOL(duet_hook_fp);
+/* Copied from mm/util.c and simplified */
+struct address_space *page_mapping(struct page *page)
+{
+	struct address_space *mapping;
+
+	page = compound_head(page);
+
+	/* This happens if someone calls flush_dcache_page on slab page */
+	if (unlikely(PageSlab(page)) || unlikely(PageSwapCache(page)))
+		return NULL;
+
+	mapping = page->mapping;
+	if ((unsigned long)mapping & PAGE_MAPPING_FLAGS)
+		return NULL;
+	return mapping;
+}
 
 /*
  * The framework implements two models that define how we update the page state
@@ -92,7 +106,7 @@ void duet_hook(__u16 evtcode, void *data)
 	page = (struct page *)data;
 
 	/* Duet must be online, and the page must belong to a valid mapping */
-	if (!page || !page->mapping) {
+	if (!page || !page->mapping || !page_mapping(page)) {
 		duet_dbg(KERN_ERR "duet: dropped event %x due to NULL mapping\n",
 			evtcode);
 		return;
