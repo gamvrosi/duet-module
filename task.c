@@ -42,9 +42,23 @@ static int process_inode(struct duet_task *task, struct inode *inode)
 	/* Go through all pages of this inode */
 	rcu_read_lock();
 	radix_tree_for_each_slot(slot, &inode->i_mapping->page_tree, &iter, 0) {
-		struct page *page = radix_tree_deref_slot(slot);
+		struct page *page;
+
+		page = radix_tree_deref_slot(slot);
 		if (unlikely(!page))
 			continue;
+
+		if (radix_tree_exception(page)) {
+			if (radix_tree_deref_retry(page)) {
+				slot = radix_tree_iter_retry(&iter);
+				continue;
+			}
+			/*
+			 * A shadow entry of a recently evicted page, or a swap entry
+			 * from shmem/tmpfs. Skip over it.
+			 */
+			continue;
+		}
 
 		state = DUET_PAGE_ADDED;
 		if (PageDirty(page))
