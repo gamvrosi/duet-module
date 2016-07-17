@@ -21,8 +21,6 @@
 #include <linux/ioctl.h>
 #include "common.h"
 
-#define MAX_NAME	22
-#define MAX_PATH	1024
 #define DUET_IOC_MAGIC	0xDE
 
 /* ioctl codes */

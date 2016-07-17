@@ -67,6 +67,7 @@
 
 #define DUET_DEF_NUMTASKS	8
 #define MAX_NAME		22
+#define MAX_PATH		1024
 #define DUET_BITS_PER_NODE	(32768 * 8)	/* 32KB bitmaps */
 
 /* Some useful flags for clearing bitmaps */
@@ -149,7 +150,7 @@ struct duet_bittree {
 
 struct duet_task {
 	__u8			id;
-	__u8			is_file;	/* Task type: set if file task */
+	__u8			is_file;	/* Type: set if file task */
 	char			name[MAX_NAME];
 	struct list_head	task_list;
 	wait_queue_head_t	cleaner_queue;
@@ -158,8 +159,11 @@ struct duet_task {
 	char			*pathbuf;	/* Buffer for getpath */
 
 	/* Optional heuristics to filter the events received */
-	struct super_block	*f_sb;		/* Filesystem of task */
+	struct super_block	*f_sb;		/* Filesystem superblock */
 	struct dentry		*p_dentry;	/* Parent dentry */
+	struct vfsmount		*p_mnt;		/* Parent VFS mount point */
+	char			*parbuf;	/* Buffer for registered path */
+	__u16			parbuflen;	/* Length of path buffer */
 	__u8			use_imap;	/* Use the inode bitmap */
 
 	/* Hash table bucket bitmap */

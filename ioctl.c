@@ -126,38 +126,65 @@ static int find_get_inode(struct super_block *sb, unsigned long long c_uuid,
 }
 
 int do_find_path(struct duet_task *task, struct inode *inode, int getpath,
-	char *path)
+	char *retpath)
 {
-	int len, ret = 0;
+	int len;
 	char *p;
+	struct path path;
+	struct dentry *alias, *i_dentry = NULL;
 
-	if (!task || !task->p_dentry) {
+	if (!task || !task->p_dentry || !task->p_mnt) {
 		printk(KERN_ERR "do_find_path%s: invalid task registration\n",
 			(getpath ? "" : " (null)"));
 		return 1;
 	}
 
-	/* Now get the path */
-	len = MAX_PATH;
-	ret = d_find_path(inode, task->p_dentry, getpath, task->pathbuf, len, &p);
-	if (ret == 1) {
-		duet_dbg(KERN_INFO "do_find_path%s: parent dentry not found\n",
-				(getpath ? "" : " (null)"));
-		if (getpath)
-			path[0] = '\0';
-	} else if (ret == -1) {
-		duet_dbg(KERN_INFO "do_find_path%s: no common ancestor\n",
-				(getpath ? "" : " (null)"));
-		if (getpath)
-			path[0] = '\0';
-	} else if (getpath) {
-		duet_dbg(KERN_INFO "do_find_path%s: got %s\n",
-				(getpath ? "" : " (null)"), p);
-		p++;
-		memcpy(path, p, len - (p - task->pathbuf) + 1);
+	if (getpath)
+		retpath[0] = '\0';
+
+	/* Get the path for at least one alias of the inode */
+	if (!hlist_empty(&inode->i_dentry)) {
+		hlist_for_each_entry(alias, &inode->i_dentry, d_u.d_alias) {
+			if (!(IS_ROOT(alias) &&
+			    (alias->d_flags & DCACHE_DISCONNECTED))) {
+				i_dentry = alias;
+
+				/* Now get the path */
+				len = MAX_PATH;
+				memset(task->pathbuf, 0, len);
+				path.mnt = task->p_mnt;
+				path.dentry = i_dentry;
+
+				p = d_path(&path, task->pathbuf, len);
+				if (IS_ERR(p)) {
+					printk(KERN_ERR "do_find_path%s: d_path failed\n",
+						(getpath ? "" : " (null)"));
+					continue;
+				} else if (!p) {
+					duet_dbg(KERN_INFO "do_find_path%s: parent dentry not found\n",
+						(getpath ? "" : " (null)"));
+					continue;
+				}
+
+				/* Is this path of interest? */
+				if (memcmp(task->parbuf, p, task->parbuflen - 1)) {
+					duet_dbg(KERN_INFO "do_find_path%s: no common ancestor\n",
+						(getpath ? "" : " (null)"));
+					continue;
+				}
+
+				/* Got one, copy in return buffer */
+				duet_dbg(KERN_INFO "do_find_path%s: got %s\n",
+					(getpath ? "" : " (null)"), p);
+				if (getpath)
+					memcpy(retpath, p, len - (p - task->pathbuf));
+
+				return 0;
+			}
+		}
 	}
 
-	return ret;
+	return 1;
 }
 
 int duet_find_path(struct duet_task *task, unsigned long long uuid, int getpath,

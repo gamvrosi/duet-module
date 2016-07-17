@@ -242,19 +242,55 @@ EXPORT_SYMBOL_GPL(duet_set_done);
 /* Properly allocate and initialize a task struct */
 static int duet_task_init(struct duet_task **task, const char *name,
 	__u32 regmask, __u32 bitrange, struct super_block *f_sb,
-	struct dentry *p_dentry)
+	struct dentry *p_dentry, struct vfsmount *p_mnt)
 {
+	int len;
+	char *p;
+	struct path path;
+
 	*task = kzalloc(sizeof(**task), GFP_KERNEL);
 	if (!(*task))
 		return -ENOMEM;
 
-	(*task)->pathbuf = kzalloc(4096, GFP_KERNEL);
+	/* Allocate temporary space for getpath file paths */
+	(*task)->pathbuf = kzalloc(MAX_PATH, GFP_KERNEL);
 	if (!(*task)->pathbuf) {
 		printk(KERN_ERR "duet: failed to allocate pathbuf for task\n");
 		kfree(*task);
 		return -ENOMEM;
 	}
 
+	/* Find and store registered dir path, if applicable */
+	if (!p_dentry || !p_mnt)
+		goto no_reg_dir;
+
+	(*task)->parbuf = kzalloc(MAX_PATH, GFP_KERNEL);
+	if (!(*task)->parbuf) {
+		printk(KERN_ERR "duet: failed to allocate parbuf for task\n");
+		kfree((*task)->pathbuf);
+		kfree(*task);
+		return -ENOMEM;
+	}
+
+	/* Populate registered dir path buffer */
+	len = MAX_PATH;
+	path.mnt = p_mnt;
+	path.dentry = p_dentry;
+
+	p = d_path(&path, (*task)->pathbuf, len);
+	if (IS_ERR(p)) {
+		printk(KERN_ERR "duet: failed to get registered path\n");
+		goto err;
+	} else if (!p) {
+		printk(KERN_ERR "duet: got (null) registered path\n");
+		goto err;
+	}
+
+	duet_dbg(KERN_INFO "duet: got registered path %s\n", p);
+	(*task)->parbuflen = len - (p - (*task)->pathbuf);
+	memcpy((*task)->parbuf, p, (*task)->parbuflen);
+
+no_reg_dir:
 	(*task)->id = 1;
 	memcpy((*task)->name, name, MAX_NAME);
 	atomic_set(&(*task)->refcount, 0);
@@ -275,6 +311,7 @@ static int duet_task_init(struct duet_task **task, const char *name,
 		BITS_TO_LONGS(duet_env.itm_hash_size), GFP_KERNEL);
 	if (!(*task)->bucket_bmap) {
 		printk(KERN_ERR "duet: failed to allocate bucket bitmap\n");
+		kfree((*task)->parbuf);
 		kfree((*task)->pathbuf);
 		kfree(*task);
 		return -ENOMEM;
@@ -302,11 +339,16 @@ static int duet_task_init(struct duet_task **task, const char *name,
 	(*task)->evtmask = (__u16) (regmask & 0xffff);
 	(*task)->f_sb = f_sb;
 	(*task)->p_dentry = p_dentry;
+	(*task)->p_mnt = p_mnt;
 
-	printk(KERN_DEBUG "duet: task registered with evtmask %x", (*task)->evtmask);
+	printk(KERN_DEBUG "duet: task %d registered %s(%d) with evtmask %x",
+		(*task)->id, (*task)->parbuf, (*task)->parbuflen,
+		(*task)->evtmask);
 	return 0;
 err:
 	printk(KERN_ERR "duet: error registering task\n");
+	kfree((*task)->parbuf);
+	kfree((*task)->pathbuf);
 	kfree(*task);
 	return -EINVAL;
 }
@@ -327,6 +369,7 @@ void duet_task_dispose(struct duet_task *task)
 
 	if (task->p_dentry)
 		dput(task->p_dentry);
+	kfree(task->parbuf);
 	kfree(task->pathbuf);
 	kfree(task);
 }
@@ -341,6 +384,7 @@ int __register_utask(char *path, __u32 regmask, __u32 bitrange,
 	struct file *file;
 	mm_segment_t old_fs;
 	struct dentry *dentry = NULL;
+	struct vfsmount *mnt;
 	struct super_block *sb;
 
 	/* First, open the path we were given */
@@ -373,6 +417,7 @@ int __register_utask(char *path, __u32 regmask, __u32 bitrange,
 	}
 
 	sb = file->f_inode->i_sb;
+	mnt = file->f_path.mnt;
 
 	if (strnlen(name, MAX_NAME) == MAX_NAME) {
 		printk(KERN_ERR "duet_register: task name too long\n");
@@ -380,7 +425,7 @@ int __register_utask(char *path, __u32 regmask, __u32 bitrange,
 		goto reg_close;
 	}
 
-	ret = duet_task_init(&task, name, regmask, bitrange, sb, dentry);
+	ret = duet_task_init(&task, name, regmask, bitrange, sb, dentry, mnt);
 	if (ret) {
 		printk(KERN_ERR "duet_register: failed to initialize task\n");
 		ret = -EINVAL;
@@ -435,7 +480,7 @@ int __register_ktask(char *path, __u32 regmask, __u32 bitrange,
 		return -EINVAL;
 	}
 
-	ret = duet_task_init(&task, name, regmask, bitrange, sb, NULL);
+	ret = duet_task_init(&task, name, regmask, bitrange, sb, NULL, NULL);
 	if (ret) {
 		printk(KERN_ERR "duet_register: failed to initialize task\n");
 		return -EINVAL;
