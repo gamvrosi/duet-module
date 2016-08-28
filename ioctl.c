@@ -262,7 +262,7 @@ static int duet_ioctl_init(void __user *arg)
 	int ret;
 	unsigned int lookup_flags = LOOKUP_DIRECTORY;
 	struct duet_ioctl_init_args *ia;
-	struct filename *name = NULL;
+	char *name = NULL;
 	struct path *path = NULL;
 
 	if (!capable(CAP_SYS_ADMIN))
@@ -287,14 +287,16 @@ static int duet_ioctl_init(void __user *arg)
 		return -EINVAL;
 
 	if (ia->name) {
-		name = getname(ia->name);
-		if (IS_ERR(name))
-			return PTR_ERR(name);
+		name = kzalloc(NAME_MAX, GFP_KERNEL);
+		if (!name)
+			return -ENOMEM;
+
+		memcpy(name, ia->name, NAME_MAX);
 	}
 
 	path = kzalloc(sizeof(struct path), GFP_KERNEL);
 	if (!path) {
-		putname(name);
+		kfree(name);
 		return -ENOMEM;
 	}
 
@@ -320,7 +322,7 @@ static int duet_ioctl_init(void __user *arg)
 	return ret;
 
 err:
-	putname(name);
+	kfree(name);
 	path_put(path);
 	kfree(path);
 	kfree(ia);

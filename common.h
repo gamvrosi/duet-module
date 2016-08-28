@@ -127,7 +127,7 @@ struct duet_task {
 	__u8			id;
 
 	int			fd;
-	struct filename		*name;
+	char			*name;
 	__u32			evtmask;	/* Mask of subscribed events */
 	struct path		*regpath;	/* Registered path */
 	char			*regpathname;	/* Registered path name */
@@ -181,7 +181,7 @@ void hash_print(struct duet_task *task);
 /* task.c -- not in linux/duet.h */
 struct duet_task *duet_find_task(__u8 id);
 void duet_task_dispose(struct duet_task *task);
-int duet_register_task(struct filename *name, __u32 regmask, struct path *path);
+int duet_register_task(char *name, __u32 regmask, struct path *path);
 
 /* ioctl.c */
 long duet_ioctl(struct file *file, unsigned int cmd, unsigned long arg);

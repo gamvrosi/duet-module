@@ -20,25 +20,6 @@
 #include <linux/anon_inodes.h>
 #include "common.h"
 
-#if 0
-/* Copied from mm/util.c and simplified */
-struct address_space *page_mapping(struct page *page)
-{
-	struct address_space *mapping;
-
-	page = compound_head(page);
-
-	/* This happens if someone calls flush_dcache_page on slab page */
-	if (unlikely(PageSlab(page)) || unlikely(PageSwapCache(page)))
-		return NULL;
-
-	mapping = page->mapping;
-	if ((unsigned long)mapping & PAGE_MAPPING_FLAGS)
-		return NULL;
-	return mapping;
-}
-#endif /* 0 */
-
 /* putname copy from kernel */
 #define __putname(name)         kmem_cache_free(names_cachep, (void *)(name))
 
@@ -54,6 +35,23 @@ void putname(struct filename *name)
 		kfree(name);
 	} else
 		__putname(name);
+}
+
+/* Copied from mm/util.c and simplified */
+struct address_space *page_mapping(struct page *page)
+{
+	struct address_space *mapping;
+
+	page = compound_head(page);
+
+	/* This happens if someone calls flush_dcache_page on slab page */
+	if (unlikely(PageSlab(page)) || unlikely(PageSwapCache(page)))
+		return NULL;
+
+	mapping = page->mapping;
+	if ((unsigned long)mapping & PAGE_MAPPING_FLAGS)
+		return NULL;
+	return mapping;
 }
 
 /*
@@ -100,7 +98,7 @@ void duet_task_dispose(struct duet_task *task)
 		ret = hash_fetch(task, &itm);
 	kfree(task->bucket_bmap);
 
-	putname(task->name);
+	kfree(task->name);
 	path_put(task->regpath);
 	kfree(task->regpath);
 	kfree(task->regpathname);
@@ -349,8 +347,8 @@ static int scan_page_cache(struct duet_task *task)
 }
 
 /* Allocate and initialize a task struct */
-static int duet_task_init(struct duet_task **task, struct filename *name,
-	__u32 regmask, struct path *path)
+static int duet_task_init(struct duet_task **task, char *name, __u32 regmask,
+	struct path *path)
 {
 	int len;
 	char *p;
@@ -442,7 +440,7 @@ err:
 }
 
 /* Register the task with Duet */
-int duet_register_task(struct filename *name, __u32 regmask, struct path *path)
+int duet_register_task(char *name, __u32 regmask, struct path *path)
 {
 	int ret;
 	__u8 *tid;

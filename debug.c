@@ -75,7 +75,7 @@ int duet_print_list(struct duet_ioctl_status_args __user *arg)
 	list_for_each_entry(cur, &duet_env.tasks, task_list) {
 		argp->tasks[i].id = cur->id;
 		argp->tasks[i].fd = cur->fd;
-		memcpy(argp->tasks[i].name, cur->name->name, NAME_MAX);
+		memcpy(argp->tasks[i].name, cur->name, NAME_MAX);
 		argp->tasks[i].regmask = cur->evtmask;
 		memcpy(argp->tasks[i].path, cur->regpathname, cur->regpathlen);
 		i++;
