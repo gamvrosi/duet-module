@@ -32,14 +32,23 @@ int duet_online(void)
 
 static void match_tracepoint(struct tracepoint *tp, void *priv)
 {
-	if (!strcmp(tp->name, "mm_filemap_add_to_page_cache"))
-		tp_add = tp;
-	else if (!strcmp(tp->name, "mm_filemap_remove_from_page_cache"))
-		tp_remove = tp;
-	else if (!strcmp(tp->name, "mm_pageflags_set_page_dirty"))
-		tp_dirty = tp;
-	else if (!strcmp(tp->name, "mm_pageflags_clear_page_dirty"))
-		tp_flush = tp;
+	if (!strcmp(tp->name, "mm_filemap_add_to_page_cache")) {
+		tp_add = kzalloc(sizeof(struct tracepoint), GFP_KERNEL);
+		if (tp_add)
+			*tp_add = *tp;
+	} else if (!strcmp(tp->name, "mm_filemap_delete_from_page_cache")) {
+		tp_remove = kzalloc(sizeof(struct tracepoint), GFP_KERNEL);
+		if (tp_remove)
+			*tp_remove = *tp;
+	} else if (!strcmp(tp->name, "mm_pageflags_set_page_dirty")) {
+		tp_dirty = kzalloc(sizeof(struct tracepoint), GFP_KERNEL);
+		if (tp_dirty)
+			*tp_dirty = *tp;
+	} else if (!strcmp(tp->name, "mm_pageflags_clear_page_dirty")) {
+		tp_flush = kzalloc(sizeof(struct tracepoint), GFP_KERNEL);
+		if (tp_flush)
+			*tp_flush = *tp;
+	}
 }
 
 static void tp_add_probe(void *data, struct page *page)
@@ -88,7 +97,8 @@ int duet_bootstrap(__u8 numtasks)
 	/* Initialize tracepoints probes */
 	for_each_kernel_tracepoint(match_tracepoint, NULL);
 
-	/* TODO: Add provisos for tp_dirty and tp_flush */
+	/* TODO: Add provisos for tp_dirty and tp_flush, don't turn down
+	 * potential failure to find them */
 	if (!tp_add || !tp_remove) {
 		pr_err("duet: unable to find all tracepoints\n");
 		goto tp_fail;
@@ -137,14 +147,25 @@ int duet_shutdown(void)
 		return 1;
 	}
 
-	if (tp_add)
+	if (tp_add) {
 		tracepoint_probe_unregister(tp_add, tp_add_probe, NULL);
-	if (tp_remove)
+		kfree(tp_add);
+	}
+
+	if (tp_remove) {
 		tracepoint_probe_unregister(tp_remove, tp_remove_probe, NULL);
-	if (tp_dirty)
+		kfree(tp_remove);
+	}
+
+	if (tp_dirty) {
 		tracepoint_probe_unregister(tp_dirty, tp_dirty_probe, NULL);
-	if (tp_flush)
+		kfree(tp_dirty);
+	}
+
+	if (tp_flush) {
 		tracepoint_probe_unregister(tp_flush, tp_flush_probe, NULL);
+		kfree(tp_flush);
+	}
 
 	tracepoint_synchronize_unregister();
 
