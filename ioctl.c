@@ -97,10 +97,8 @@ int duet_bootstrap(__u8 numtasks)
 	/* Initialize tracepoints probes */
 	for_each_kernel_tracepoint(match_tracepoint, NULL);
 
-	/* TODO: Add provisos for tp_dirty and tp_flush, don't turn down
-	 * potential failure to find them */
 	if (!tp_add || !tp_remove) {
-		pr_err("duet: unable to find all tracepoints\n");
+		pr_err("duet: unable to find page existence tracepoints\n");
 		goto tp_fail;
 	}
 
@@ -116,7 +114,21 @@ int duet_bootstrap(__u8 numtasks)
 		goto tp_fail;
 	}
 
-#if 0
+	/*
+	 * Modification events are optional, since we should work with
+	 * unpatched kernels. But we should only demand either both hooks
+	 * or neither, to properly support DUET_PAGE_MODIFIED.
+	 */
+	if (!tp_dirty && !tp_flush) {
+		pr_info("duet: DIRTY and FLUSH event hooks unavailable\n");
+		goto tp_done;
+	}
+
+	if (!tp_dirty || !tp_flush) {
+		pr_err("duet: unable to find page modification tracepoints\n");
+		goto tp_fail;
+	}
+
 	ret = tracepoint_probe_register(tp_dirty, tp_dirty_probe, NULL);
 	if (ret) {
 		pr_err("duet: unable to register tracepoint (dirty)\n");
@@ -128,8 +140,8 @@ int duet_bootstrap(__u8 numtasks)
 		pr_err("duet: unable to register tracepoint (flush)\n");
 		goto tp_fail;
 	}
-#endif /* 0 */
 
+tp_done:
 	return 0;
 
 tp_fail:
@@ -321,9 +333,9 @@ static int duet_ioctl_init(void __user *arg)
 		return -ENOMEM;
 	}
 
-	ret = user_path_at(AT_FDCWD, ia->path, lookup_flags, path);
+	ret = kern_path(ia->path, lookup_flags, path);
 	if (ret) {
-		pr_err("duet_init: user_path_at failed\n");
+		pr_err("duet_init: kern_path failed for %s\n", ia->path);
 		goto err;
 	}
 
