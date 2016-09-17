@@ -20,55 +20,99 @@
 #include <linux/tracepoint.h>
 #include "ioctl.h"
 
-static struct tracepoint *tp_add;
-static struct tracepoint *tp_remove;
-static struct tracepoint *tp_dirty;
-static struct tracepoint *tp_flush;
-
 int duet_online(void)
 {
 	return (atomic_read(&duet_env.status) == DUET_STATUS_ON);
 }
 
-static void match_tracepoint(struct tracepoint *tp, void *priv)
-{
-	if (!strcmp(tp->name, "mm_filemap_add_to_page_cache")) {
-		tp_add = kzalloc(sizeof(struct tracepoint), GFP_KERNEL);
-		if (tp_add)
-			*tp_add = *tp;
-	} else if (!strcmp(tp->name, "mm_filemap_delete_from_page_cache")) {
-		tp_remove = kzalloc(sizeof(struct tracepoint), GFP_KERNEL);
-		if (tp_remove)
-			*tp_remove = *tp;
-	} else if (!strcmp(tp->name, "mm_pageflags_set_page_dirty")) {
-		tp_dirty = kzalloc(sizeof(struct tracepoint), GFP_KERNEL);
-		if (tp_dirty)
-			*tp_dirty = *tp;
-	} else if (!strcmp(tp->name, "mm_pageflags_clear_page_dirty")) {
-		tp_flush = kzalloc(sizeof(struct tracepoint), GFP_KERNEL);
-		if (tp_flush)
-			*tp_flush = *tp;
-	}
-}
-
 static void tp_add_probe(void *data, struct page *page)
 {
-	duet_hook(DUET_PAGE_ADDED, page);
+	pr_info("duet: tp_add_probe triggered (%lu)\n", page->index);
+//	duet_hook(DUET_PAGE_ADDED, page);
 }
 
 static void tp_remove_probe(void *data, struct page *page)
 {
-	duet_hook(DUET_PAGE_REMOVED, page);
+	pr_info("duet: tp_remove_probe triggered (%lu)\n", page->index);
+//	duet_hook(DUET_PAGE_REMOVED, page);
 }
 
 static void tp_dirty_probe(void *data, struct page *page)
 {
-	duet_hook(DUET_PAGE_DIRTY, page);
+	pr_info("duet: tp_dirty_probe triggered (%lu)\n", page->index);
+//	duet_hook(DUET_PAGE_DIRTY, page);
 }
 
 static void tp_flush_probe(void *data, struct page *page)
 {
-	duet_hook(DUET_PAGE_FLUSHED, page);
+	pr_info("duet: tp_flush_probe triggered (%lu)\n", page->index);
+//	duet_hook(DUET_PAGE_FLUSHED, page);
+}
+
+static void duet_add_tracepoint(struct tracepoint *tp, void *priv)
+{
+	if (!strcmp(tp->name, "mm_filemap_add_to_page_cache")) {
+		if (tracepoint_probe_register(tp, tp_add_probe, NULL)) {
+			pr_err("duet: failed to register ADD hook\n");
+		} else {
+			pr_info("duet: ADD hook registered\n");
+			duet_env.tpprobes |= DUET_PAGE_ADDED;
+		}
+	} else if (!strcmp(tp->name, "mm_filemap_delete_from_page_cache")) {
+		if (tracepoint_probe_register(tp, tp_remove_probe, NULL)) {
+			pr_err("duet: failed to register REMOVE hook\n");
+		} else {
+			pr_info("duet: REMOVE hook registered\n");
+			duet_env.tpprobes |= DUET_PAGE_REMOVED;
+		}
+	} else if (!strcmp(tp->name, "mm_pageflags_set_page_dirty")) {
+		if (tracepoint_probe_register(tp, tp_dirty_probe, NULL)) {
+			pr_err("duet: failed to register DIRTY hook\n");
+		} else {
+			pr_info("duet: DIRTY hook registered\n");
+			duet_env.tpprobes |= DUET_PAGE_DIRTY;
+		}
+	} else if (!strcmp(tp->name, "mm_pageflags_clear_page_dirty")) {
+		if (tracepoint_probe_register(tp, tp_flush_probe, NULL)) {
+			pr_err("duet: failed to register FLUSH hook\n");
+		} else {
+			pr_info("duet: FLUSH hook registered\n");
+			duet_env.tpprobes |= DUET_PAGE_FLUSHED;
+		}
+	}
+}
+
+static void duet_rm_tracepoint(struct tracepoint *tp, void *priv)
+{
+	if (!strcmp(tp->name, "mm_filemap_add_to_page_cache")) {
+		if (tracepoint_probe_unregister(tp, tp_add_probe, NULL)) {
+			pr_err("duet: failed to remove ADD hook\n");
+		} else {
+			pr_info("duet: ADD hook removed\n");
+			duet_env.tpprobes &= (~DUET_PAGE_ADDED);
+		}
+	} else if (!strcmp(tp->name, "mm_filemap_delete_from_page_cache")) {
+		if (tracepoint_probe_unregister(tp, tp_remove_probe, NULL)) {
+			pr_err("duet: failed to remove REMOVE hook\n");
+		} else {
+			pr_info("duet: REMOVE hook removed\n");
+			duet_env.tpprobes &= (~DUET_PAGE_REMOVED);
+		}
+	} else if (!strcmp(tp->name, "mm_pageflags_set_page_dirty")) {
+		if (tracepoint_probe_unregister(tp, tp_dirty_probe, NULL)) {
+			pr_err("duet: failed to remove DIRTY hook\n");
+		} else {
+			pr_info("duet: DIRTY hook removed\n");
+			duet_env.tpprobes &= (~DUET_PAGE_DIRTY);
+		}
+	} else if (!strcmp(tp->name, "mm_pageflags_clear_page_dirty")) {
+		if (tracepoint_probe_register(tp, tp_flush_probe, NULL)) {
+			pr_err("duet: failed to remove FLUSH hook\n");
+		} else {
+			pr_info("duet: FLUSH hook removed\n");
+			duet_env.tpprobes &= (~DUET_PAGE_FLUSHED);
+		}
+	}
 }
 
 int duet_bootstrap(__u8 numtasks)
@@ -95,53 +139,16 @@ int duet_bootstrap(__u8 numtasks)
 	atomic_set(&duet_env.status, DUET_STATUS_ON);
 
 	/* Initialize tracepoints probes */
-	for_each_kernel_tracepoint(match_tracepoint, NULL);
-
-	if (!tp_add || !tp_remove) {
-		pr_err("duet: unable to find page existence tracepoints\n");
+	duet_env.tpprobes = 0;
+	for_each_kernel_tracepoint(duet_add_tracepoint, NULL);
+	if (((duet_env.tpprobes & DUET_COMBO_EXISTS) != DUET_COMBO_EXISTS) ||
+	    ((duet_env.tpprobes & DUET_COMBO_MODIFIED) &&
+	    ((duet_env.tpprobes & DUET_COMBO_MODIFIED) != DUET_COMBO_MODIFIED))) {
+		pr_err("debug: Insufficient probes (%u)\n", duet_env.tpprobes);
+		ret = -EINVAL;
 		goto tp_fail;
 	}
 
-	ret = tracepoint_probe_register(tp_add, tp_add_probe, NULL);
-	if (ret) {
-		pr_err("duet: unable to register tracepoint (add)\n");
-		goto tp_fail;
-	}
-
-	ret = tracepoint_probe_register(tp_remove, tp_remove_probe, NULL);
-	if (ret) {
-		pr_err("duet: unable to register tracepoint (remove)\n");
-		goto tp_fail;
-	}
-
-	/*
-	 * Modification events are optional, since we should work with
-	 * unpatched kernels. But we should only demand either both hooks
-	 * or neither, to properly support DUET_PAGE_MODIFIED.
-	 */
-	if (!tp_dirty && !tp_flush) {
-		pr_info("duet: DIRTY and FLUSH event hooks unavailable\n");
-		goto tp_done;
-	}
-
-	if (!tp_dirty || !tp_flush) {
-		pr_err("duet: unable to find page modification tracepoints\n");
-		goto tp_fail;
-	}
-
-	ret = tracepoint_probe_register(tp_dirty, tp_dirty_probe, NULL);
-	if (ret) {
-		pr_err("duet: unable to register tracepoint (dirty)\n");
-		goto tp_fail;
-	}
-
-	ret = tracepoint_probe_register(tp_flush, tp_flush_probe, NULL);
-	if (ret) {
-		pr_err("duet: unable to register tracepoint (flush)\n");
-		goto tp_fail;
-	}
-
-tp_done:
 	return 0;
 
 tp_fail:
@@ -159,27 +166,14 @@ int duet_shutdown(void)
 		return 1;
 	}
 
-	if (tp_add) {
-		tracepoint_probe_unregister(tp_add, tp_add_probe, NULL);
-		kfree(tp_add);
-	}
-
-	if (tp_remove) {
-		tracepoint_probe_unregister(tp_remove, tp_remove_probe, NULL);
-		kfree(tp_remove);
-	}
-
-	if (tp_dirty) {
-		tracepoint_probe_unregister(tp_dirty, tp_dirty_probe, NULL);
-		kfree(tp_dirty);
-	}
-
-	if (tp_flush) {
-		tracepoint_probe_unregister(tp_flush, tp_flush_probe, NULL);
-		kfree(tp_flush);
-	}
-
+	/* Tear down tracepoint probes */
+	for_each_kernel_tracepoint(duet_rm_tracepoint, NULL);
 	tracepoint_synchronize_unregister();
+
+	if (duet_env.tpprobes) {
+		pr_err("duet: failed to remove all hooks\n");
+		return -EFAULT;
+	}
 
 	/* Remove all tasks */
 	mutex_lock(&duet_env.task_list_mutex);

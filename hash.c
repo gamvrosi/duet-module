@@ -19,9 +19,6 @@
 #include <linux/hash.h>
 #include "common.h"
 
-#define DUET_NEGATE_EXISTS	(DUET_PAGE_ADDED | DUET_PAGE_REMOVED)
-#define DUET_NEGATE_MODIFIED	(DUET_PAGE_DIRTY | DUET_PAGE_FLUSHED)
-
 /*
  * Page state is retained in a global hash table shared by all tasks.
  * Indexing is based on the page's inode number and offset.
@@ -134,12 +131,12 @@ int hash_add(struct duet_task *task, struct duet_uuid uuid, unsigned long idx,
 
 		/* Negate previous events and remove if needed */
 		if ((task->evtmask & DUET_PAGE_EXISTS) &&
-		   ((curmask & DUET_NEGATE_EXISTS) == DUET_NEGATE_EXISTS))
-			curmask &= ~DUET_NEGATE_EXISTS;
+		   ((curmask & DUET_COMBO_EXISTS) == DUET_COMBO_EXISTS))
+			curmask &= ~DUET_COMBO_EXISTS;
 
 		if ((task->evtmask & DUET_PAGE_MODIFIED) &&
-		   ((curmask & DUET_NEGATE_MODIFIED) == DUET_NEGATE_MODIFIED))
-			curmask &= ~DUET_NEGATE_MODIFIED;
+		   ((curmask & DUET_COMBO_MODIFIED) == DUET_COMBO_MODIFIED))
+			curmask &= ~DUET_COMBO_MODIFIED;
 
 check_dispose:
 		if ((curmask == DUET_MASK_VALID) && (itnode->refcount == 1)) {
@@ -239,6 +236,7 @@ again:
 	hlist_bl_for_each_entry(itnode, n, b, node) {
 		if (itnode->state[task->id] & DUET_MASK_VALID) {
 			*itm = itnode->item;
+			itm->uuid.tid = task->id;
 			itm->state = itnode->state[task->id] &
 				     (~DUET_MASK_VALID);
 

@@ -57,6 +57,9 @@
 
 #define DUET_DEF_NUMTASKS	8
 
+#define DUET_COMBO_EXISTS	(DUET_PAGE_ADDED | DUET_PAGE_REMOVED)
+#define DUET_COMBO_MODIFIED	(DUET_PAGE_DIRTY | DUET_PAGE_FLUSHED)
+
 #define DUET_INODE_FREEING	(I_WILL_FREE | I_FREEING | I_CLEAR)
 
 enum {
@@ -150,6 +153,7 @@ struct duet_task {
 struct duet_info {
 	atomic_t		status;
 	__u8			numtasks;	/* Number of concurrent tasks */
+	__u8			tpprobes;	/* Enabled tracepoint probes */
 
 	/*
 	 * Access to the task list is synchronized via a mutex. However, any
