@@ -69,7 +69,7 @@ void duet_hook(__u16 evtcode, void *data)
 		if (sb && sb != inode->i_sb)
 			continue;
 
-		pr_info("duet: rcvd event %x on (ino %lu, gen %u, idx %lu)\n",
+		duet_dbg("duet: rcvd event %x on (ino %lu, gen %u, idx %lu)\n",
 			evtcode, uuid.ino, uuid.gen, page_idx);
 
 		/* Use the inode bitmap to filter out event if applicable */

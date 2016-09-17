@@ -27,26 +27,22 @@ int duet_online(void)
 
 static void tp_add_probe(void *data, struct page *page)
 {
-	pr_info("duet: tp_add_probe triggered (%lu)\n", page->index);
-//	duet_hook(DUET_PAGE_ADDED, page);
+	duet_hook(DUET_PAGE_ADDED, page);
 }
 
 static void tp_remove_probe(void *data, struct page *page)
 {
-	pr_info("duet: tp_remove_probe triggered (%lu)\n", page->index);
-//	duet_hook(DUET_PAGE_REMOVED, page);
+	duet_hook(DUET_PAGE_REMOVED, page);
 }
 
 static void tp_dirty_probe(void *data, struct page *page)
 {
-	pr_info("duet: tp_dirty_probe triggered (%lu)\n", page->index);
-//	duet_hook(DUET_PAGE_DIRTY, page);
+	duet_hook(DUET_PAGE_DIRTY, page);
 }
 
 static void tp_flush_probe(void *data, struct page *page)
 {
-	pr_info("duet: tp_flush_probe triggered (%lu)\n", page->index);
-//	duet_hook(DUET_PAGE_FLUSHED, page);
+	duet_hook(DUET_PAGE_FLUSHED, page);
 }
 
 static void duet_add_tracepoint(struct tracepoint *tp, void *priv)
