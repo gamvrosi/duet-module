@@ -102,7 +102,7 @@ static void duet_rm_tracepoint(struct tracepoint *tp, void *priv)
 			duet_env.tpprobes &= (~DUET_PAGE_DIRTY);
 		}
 	} else if (!strcmp(tp->name, "page_flags_clear_dirty")) {
-		if (tracepoint_probe_register(tp, tp_flush_probe, NULL)) {
+		if (tracepoint_probe_unregister(tp, tp_flush_probe, NULL)) {
 			pr_err("duet: failed to remove FLUSH hook\n");
 		} else {
 			pr_info("duet: FLUSH hook removed\n");
