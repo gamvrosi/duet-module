@@ -61,14 +61,14 @@ static void duet_add_tracepoint(struct tracepoint *tp, void *priv)
 			pr_info("duet: REMOVE hook registered\n");
 			duet_env.tpprobes |= DUET_PAGE_REMOVED;
 		}
-	} else if (!strcmp(tp->name, "mm_pageflags_set_page_dirty")) {
+	} else if (!strcmp(tp->name, "page_flags_set_dirty")) {
 		if (tracepoint_probe_register(tp, tp_dirty_probe, NULL)) {
 			pr_err("duet: failed to register DIRTY hook\n");
 		} else {
 			pr_info("duet: DIRTY hook registered\n");
 			duet_env.tpprobes |= DUET_PAGE_DIRTY;
 		}
-	} else if (!strcmp(tp->name, "mm_pageflags_clear_page_dirty")) {
+	} else if (!strcmp(tp->name, "page_flags_clear_dirty")) {
 		if (tracepoint_probe_register(tp, tp_flush_probe, NULL)) {
 			pr_err("duet: failed to register FLUSH hook\n");
 		} else {
@@ -94,14 +94,14 @@ static void duet_rm_tracepoint(struct tracepoint *tp, void *priv)
 			pr_info("duet: REMOVE hook removed\n");
 			duet_env.tpprobes &= (~DUET_PAGE_REMOVED);
 		}
-	} else if (!strcmp(tp->name, "mm_pageflags_set_page_dirty")) {
+	} else if (!strcmp(tp->name, "page_flags_set_dirty")) {
 		if (tracepoint_probe_unregister(tp, tp_dirty_probe, NULL)) {
 			pr_err("duet: failed to remove DIRTY hook\n");
 		} else {
 			pr_info("duet: DIRTY hook removed\n");
 			duet_env.tpprobes &= (~DUET_PAGE_DIRTY);
 		}
-	} else if (!strcmp(tp->name, "mm_pageflags_clear_page_dirty")) {
+	} else if (!strcmp(tp->name, "page_flags_clear_dirty")) {
 		if (tracepoint_probe_register(tp, tp_flush_probe, NULL)) {
 			pr_err("duet: failed to remove FLUSH hook\n");
 		} else {
