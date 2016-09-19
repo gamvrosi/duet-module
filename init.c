@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015 George Amvrosiadis.  All rights reserved.
+ * Copyright (C) 2016 George Amvrosiadis.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
@@ -17,10 +17,8 @@
  */
 
 #include <linux/module.h>
-#include <linux/init.h>
-#include <linux/cdev.h>
 #include <linux/device.h>
-#include <linux/slab.h>
+#include <linux/cdev.h>
 #include "common.h"
 
 #define DUET_DEVNAME "duet"
@@ -32,8 +30,8 @@ struct file_operations duet_fops = {
 
 /* Duet globals */
 dev_t duet_dev;
-struct cdev *duet_cdev = NULL;
-struct class *duet_class = NULL;
+struct class *duet_class;
+struct cdev *duet_cdev;
 struct duet_info duet_env;
 
 static int duet_create_chrdev(void)
@@ -44,26 +42,26 @@ static int duet_create_chrdev(void)
 	/* Dynamically register the character device */
 	ret = alloc_chrdev_region(&duet_dev, 0, 1, DUET_DEVNAME);
 	if (ret < 0) {
-		printk(KERN_WARNING "duet: character device alloc failed\n");
+		pr_err("duet: character device alloc failed\n");
 		return ret;
 	}
 
 	/* Create device class */
 	duet_class = class_create(THIS_MODULE, DUET_DEVNAME);
 	if (!duet_class) {
-		printk(KERN_WARNING "duet: failed to create device class\n");
+		pr_err("duet: failed to create device class\n");
 		goto bail_reg;
 	}
 
 	devcp = device_create(duet_class, NULL, duet_dev, NULL, DUET_DEVNAME);
 	if (!devcp) {
-		printk(KERN_WARNING "duet: failed to create device node\n");
+		pr_err("duet: failed to create device node\n");
 		goto bail_cl;
 	}
 
 	duet_cdev = cdev_alloc();
 	if (!duet_cdev) {
-		printk(KERN_WARNING "duet: failed to alloc char device\n");
+		pr_err("duet: failed to alloc char device\n");
 		goto bail_dev;
 	}
 
@@ -71,7 +69,7 @@ static int duet_create_chrdev(void)
 	duet_cdev->owner = THIS_MODULE;
 	ret = cdev_add(duet_cdev, duet_dev, 1);
 	if (ret) {
-		printk(KERN_WARNING "duet: failed to add character device\n");
+		pr_err("duet: failed to add character device\n");
 		goto bail_alloc;
 	}
 
@@ -116,7 +114,7 @@ static int __init duet_init(void)
 	if (ret)
 		return ret;
 
-	printk(KERN_INFO "Duet device initialized successfully.\n");
+	pr_info("Duet device initialized successfully.\n");
 	return 0;
 }
 
@@ -124,7 +122,7 @@ static void __exit duet_exit(void)
 {
 	duet_shutdown();
 	duet_destroy_chrdev();
-	printk(KERN_INFO "Duet terminated successfully.\n");
+	pr_info("Duet terminated successfully.\n");
 }
 
 MODULE_AUTHOR("George Amvrosiadis <gamvrosi@gmail.com>");

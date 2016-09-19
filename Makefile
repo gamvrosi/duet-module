@@ -6,7 +6,7 @@ CONFIG_MODULE_SIG=n
 KDIR ?= /lib/modules/`uname -r`/build
 
 obj-m := duet.o
-duet-y += init.o ioctl.o task.o bittree.o hash.o hook.o itree.o
+duet-y += init.o ioctl.o task.o hook.o hash.o bittree.o path.o debug.o
 
 default:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules

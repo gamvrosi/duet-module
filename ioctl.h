@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015 George Amvrosiadis.  All rights reserved.
+ * Copyright (C) 2016 George Amvrosiadis.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
@@ -19,75 +19,76 @@
 #define _DUET_IOCTL_H
 
 #include <linux/ioctl.h>
+#include <asm/uaccess.h>
 #include "common.h"
 
 #define DUET_IOC_MAGIC	0xDE
 
-/* ioctl codes */
-enum duet_ioctl_codes {
-	DUET_START = 1,
-	DUET_STOP,
-	DUET_REGISTER,
-	DUET_DEREGISTER,
-	DUET_SET_DONE,
-	DUET_UNSET_DONE,
-	DUET_CHECK_DONE,
-	DUET_PRINTBIT,
-	DUET_PRINTITEM,
-	DUET_GET_PATH,
-};
+/* Status ioctl flags */
+#define DUET_STATUS_START	0x0001
+#define DUET_STATUS_STOP	0x0002
+#define DUET_STATUS_REPORT	0x0004
+#define DUET_STATUS_PRINT_BMAP	0x0008
+#define DUET_STATUS_PRINT_ITEM	0x0010
+#define DUET_STATUS_PRINT_LIST	0x0020
 
 struct duet_task_attrs {
-	__u8 	tid;					/* out */
-	char 	tname[MAX_NAME];			/* out */
-	__u8	is_file;				/* out */
-	__u32 	bitrange;				/* out */
-	__u16	evtmask;				/* out */
+	__u8 	id;
+	int	fd;
+	char 	name[NAME_MAX];
+	__u32	regmask;
+	char	path[PATH_MAX];
 };
 
-/* We return up to num items at a time */
-struct duet_ioctl_fetch_args {
-	__u8 			tid;			/* in */
-	__u16 			num;			/* in/out */
-	struct duet_item	itm[0];			/* out */
-};
-
-struct duet_ioctl_list_args {
-	__u8			numtasks;		/* out */
-	struct duet_task_attrs	tasks[0];		/* out */
-};
-
-struct duet_ioctl_cmd_args {
-	__u8 	cmd_flags;				/* in */
-	__u8 	tid;					/* in/out */
-	__u8 	ret;					/* out */
+struct duet_ioctl_status_args {
+	__u32 size;						/* in */
+	__u16 flags;						/* in */
 	union {
-		/* Bootstrapping args */
+		/* START args */
 		struct {
-			__u8	numtasks;		/* in */
+			__u16 maxtasks;				/* in */
 		};
-		/* Registration args */
+
+		/* PRINT_BIT, PRINT_ITEM args */
 		struct {
-			__u32 	regmask;		/* in */
-			__u32 	bitrange;		/* in */
-			char 	name[MAX_NAME];		/* in */
-			char	path[MAX_PATH];		/* in */
+			__u8 id;				/* in */
 		};
-		/* Bitmap manipulation args */
+
+		/* PRINT_LIST args */
 		struct {
-			__u32 	itmnum;			/* in */
-			__u64 	itmidx;			/* in */
+			__u16 numtasks;				/* out */
+			struct duet_task_attrs tasks[0];	/* out */
 		};
-		/* Path retrieval args */
-		struct {
-			__u64	c_uuid;			/* in */
-			char 	cpath[MAX_PATH];	/* out */
-		};
-	};	
+	};
 };
 
-#define DUET_IOC_CMD	_IOWR(DUET_IOC_MAGIC, 1, struct duet_ioctl_cmd_args)
-#define DUET_IOC_TLIST	_IOWR(DUET_IOC_MAGIC, 2, struct duet_ioctl_list_args)
-#define DUET_IOC_FETCH	_IOWR(DUET_IOC_MAGIC, 3, struct duet_ioctl_fetch_args)
+struct duet_ioctl_init_args {
+	__u32	size;						/* in */
+	char	name[NAME_MAX];					/* in */
+	__u32	regmask;					/* in */
+	char	path[PATH_MAX];					/* in */
+};
+
+/* Bitmap ioctl flags */
+#define DUET_BMAP_SET		0x0001
+#define DUET_BMAP_RESET		0x0002
+#define DUET_BMAP_CHECK		0x0004
+
+struct duet_ioctl_bmap_args {
+	__u32	size;						/* in */
+	__u16	flags;						/* in */
+	struct	duet_uuid uuid;					/* in */
+};
+
+struct duet_ioctl_gpath_args {
+	__u32 size;						/* in */
+	struct duet_uuid uuid;					/* in */
+	char path[PATH_MAX];					/* out */
+};
+
+#define DUET_IOC_STATUS	_IOWR(DUET_IOC_MAGIC, 1, struct duet_ioctl_status_args)
+#define DUET_IOC_INIT	_IOWR(DUET_IOC_MAGIC, 2, struct duet_ioctl_init_args)
+#define DUET_IOC_BMAP	_IOWR(DUET_IOC_MAGIC, 3, struct duet_ioctl_bmap_args)
+#define DUET_IOC_GPATH	_IOWR(DUET_IOC_MAGIC, 4, struct duet_ioctl_gpath_args)
 
 #endif /* _DUET_IOCTL_H */

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015 George Amvrosiadis.  All rights reserved.
+ * Copyright (C) 2016 George Amvrosiadis.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
@@ -16,29 +16,21 @@
  * Boston, MA 021110-1307, USA.
  */
 
-#include <linux/vmalloc.h>
-#include <linux/mm.h>
-#include <linux/bootmem.h>
 #include <linux/hash.h>
 #include "common.h"
 
-#define DUET_NEGATE_EXISTS	(DUET_PAGE_ADDED | DUET_PAGE_REMOVED)
-#define DUET_NEGATE_MODIFIED	(DUET_PAGE_DIRTY | DUET_PAGE_FLUSHED)
-
 /*
- * Page state for Duet is retained in a global hash table shared by all tasks.
- * Indexing is based on inode uuid and the page's offset within said inode.
+ * Page state is retained in a global hash table shared by all tasks.
+ * Indexing is based on the page's inode number and offset.
  */
 
-static unsigned long hash(unsigned long long uuid, unsigned long idx)
+static unsigned long hash(unsigned long ino, unsigned long idx)
 {
 	unsigned long long h;
 
-	h = (idx * uuid ^ (GOLDEN_RATIO_PRIME + idx)) / L1_CACHE_BYTES;
+	h = (idx * ino ^ (GOLDEN_RATIO_PRIME + idx)) / L1_CACHE_BYTES;
 	h = h ^ ((h ^ GOLDEN_RATIO_PRIME) >> duet_env.itm_hash_shift);
-	h = (h >> 32) ^ (h & 0xffffffff);
-
-	return (unsigned long) (h & duet_env.itm_hash_mask);
+	return h & duet_env.itm_hash_mask;
 }
 
 int hash_init(void)
@@ -48,15 +40,15 @@ int hash_init(void)
 	duet_env.itm_hash_size = 1 << duet_env.itm_hash_shift;
 	duet_env.itm_hash_mask = duet_env.itm_hash_size - 1;
 
-	printk(KERN_DEBUG "duet: allocated global hash table (%lu buckets)\n",
-			duet_env.itm_hash_size);
+	pr_debug("duet: allocated global hash table (%lu buckets)\n",
+		 duet_env.itm_hash_size);
 	duet_env.itm_hash_table = vmalloc(sizeof(struct hlist_bl_head) *
-						duet_env.itm_hash_size);
+					  duet_env.itm_hash_size);
 	if (!duet_env.itm_hash_table)
 		return 1;
 
 	memset(duet_env.itm_hash_table, 0, sizeof(struct hlist_bl_head) *
-						duet_env.itm_hash_size);
+						  duet_env.itm_hash_size);
 	return 0;
 }
 
@@ -68,20 +60,18 @@ static void hnode_destroy(struct item_hnode *itnode)
 }
 
 /* Allocate and initialize a new hash table node */
-static struct item_hnode *hnode_init(unsigned long long uuid, unsigned long idx)
+static struct item_hnode *hnode_init(struct duet_uuid uuid, unsigned long idx)
 {
 	struct item_hnode *itnode = NULL;
 
 	itnode = kzalloc(sizeof(struct item_hnode), GFP_NOWAIT);
-	if (!itnode) {
-		printk(KERN_ERR "duet: failed to allocate hash node\n");
+	if (!itnode)
 		return NULL;
-	}
 
-	itnode->state = kzalloc(sizeof(*(itnode->state)) * duet_env.numtasks,
+	itnode->state = kcalloc(duet_env.numtasks, sizeof(*(itnode->state)),
 				GFP_NOWAIT);
 	if (!(itnode->state)) {
-		printk(KERN_ERR "duet: failed to allocate hash node state\n");
+		pr_err("duet: failed to allocate hash node state\n");
 		kfree(itnode);
 		return NULL;
 	}
@@ -94,7 +84,7 @@ static struct item_hnode *hnode_init(unsigned long long uuid, unsigned long idx)
 }
 
 /* Add one event into the hash table */
-int hash_add(struct duet_task *task, unsigned long long uuid, unsigned long idx,
+int hash_add(struct duet_task *task, struct duet_uuid uuid, unsigned long idx,
 	__u16 evtmask, short in_scan)
 {
 	__u16 curmask = 0;
@@ -107,28 +97,24 @@ int hash_add(struct duet_task *task, unsigned long long uuid, unsigned long idx,
 	evtmask &= task->evtmask;
 
 	/* Get the bucket */
-	bnum = hash(uuid, idx);
+	bnum = hash(uuid.ino, idx);
 	b = duet_env.itm_hash_table + bnum;
 	local_irq_save(flags);
 	hlist_bl_lock(b);
 
 	/* Lookup the item in the bucket */
 	hlist_bl_for_each_entry(itnode, n, b, node) {
-#ifdef CONFIG_DUET_STATS
-		duet_env.itm_stat_lkp++;
-#endif /* CONFIG_DUET_STATS */
-		if ((itnode->item).uuid == uuid && (itnode->item).idx == idx) {
+		if ((itnode->item).uuid.ino == uuid.ino &&
+		    (itnode->item).uuid.gen == uuid.gen &&
+		    (itnode->item).idx == idx) {
 			found = 1;
 			break;
 		}
 	}
 
-#ifdef CONFIG_DUET_STATS
-	duet_env.itm_stat_num++;
-#endif /* CONFIG_DUET_STATS */
-	duet_dbg(KERN_DEBUG "duet: %s hash node (uuid %llu, ino%lu, idx%lu)\n",
+	duet_dbg("duet: %s hash node (tid %d, ino %lu, gen %lu, idx %lu)\n",
 		found ? (in_scan ? "replacing" : "updating") : "inserting",
-		uuid, DUET_UUID_INO(uuid), idx);
+		uuid.tid, uuid.ino, uuid.gen, idx);
 
 	if (found) {
 		curmask = itnode->state[task->id];
@@ -145,12 +131,12 @@ int hash_add(struct duet_task *task, unsigned long long uuid, unsigned long idx,
 
 		/* Negate previous events and remove if needed */
 		if ((task->evtmask & DUET_PAGE_EXISTS) &&
-		   ((curmask & DUET_NEGATE_EXISTS) == DUET_NEGATE_EXISTS))
-			curmask &= ~DUET_NEGATE_EXISTS;
+		   ((curmask & DUET_COMBO_EXISTS) == DUET_COMBO_EXISTS))
+			curmask &= ~DUET_COMBO_EXISTS;
 
 		if ((task->evtmask & DUET_PAGE_MODIFIED) &&
-		   ((curmask & DUET_NEGATE_MODIFIED) == DUET_NEGATE_MODIFIED))
-			curmask &= ~DUET_NEGATE_MODIFIED;
+		   ((curmask & DUET_COMBO_MODIFIED) == DUET_COMBO_MODIFIED))
+			curmask &= ~DUET_COMBO_MODIFIED;
 
 check_dispose:
 		if ((curmask == DUET_MASK_VALID) && (itnode->refcount == 1)) {
@@ -163,9 +149,6 @@ check_dispose:
 
 			/* Are we still interested in this bucket? */
 			hlist_bl_for_each_entry(itnode, n, b, node) {
-#ifdef CONFIG_DUET_STATS
-				duet_env.itm_stat_lkp++;
-#endif /* CONFIG_DUET_STATS */
 				if (itnode->state[task->id] & DUET_MASK_VALID) {
 					found = 1;
 					break;
@@ -244,19 +227,18 @@ again:
 	/* Grab first item from bucket */
 	hlist_bl_lock(b);
 	if (!b->first) {
-		printk(KERN_ERR "duet: empty hash bucket marked in bitmap\n");
+		pr_err("duet: empty hash bucket marked in bitmap\n");
 		hlist_bl_unlock(b);
 		goto again;
 	}
 
 	found = 0;
 	hlist_bl_for_each_entry(itnode, n, b, node) {
-#ifdef CONFIG_DUET_STATS
-		duet_env.itm_stat_lkp++;
-#endif /* CONFIG_DUET_STATS */
 		if (itnode->state[task->id] & DUET_MASK_VALID) {
 			*itm = itnode->item;
-			itm->state = itnode->state[task->id] & (~DUET_MASK_VALID);
+			itm->uuid.tid = task->id;
+			itm->state = itnode->state[task->id] &
+				     (~DUET_MASK_VALID);
 
 			itnode->refcount--;
 			/* Free or update node */
@@ -273,7 +255,6 @@ again:
 	}
 
 	if (!found) {
-		duet_dbg(KERN_NOTICE "duet: uninteresting bucket marked in bitmap\n");
 		hlist_bl_unlock(b);
 		goto again;
 	}
@@ -281,9 +262,6 @@ again:
 	/* Are we still interested in this bucket? */
 	found = 0;
 	hlist_bl_for_each_entry(itnode, n, b, node) {
-#ifdef CONFIG_DUET_STATS
-		duet_env.itm_stat_lkp++;
-#endif /* CONFIG_DUET_STATS */
 		if (itnode->state[task->id] & DUET_MASK_VALID) {
 			found = 1;
 			break;
@@ -293,9 +271,6 @@ again:
 	if (found)
 		set_bit(bnum, task->bucket_bmap);
 
-#ifdef CONFIG_DUET_STATS
-	duet_env.itm_stat_num++;
-#endif /* CONFIG_DUET_STATS */
 	hlist_bl_unlock(b);
 	local_irq_restore(flags);
 	return 0;
@@ -312,11 +287,10 @@ void hash_print(struct duet_task *task)
 
 	count = duet_env.itm_hash_size / 100;
 	tnodes = nodes = buckets = start = end = 0;
-	printk(KERN_INFO "duet: Printing hash table in 100 buckets"
-			" (%lu real buckets each)\n", count);
+	pr_info("duet: Printing hash table\n");
 	for (loop = 0; loop < duet_env.itm_hash_size; loop++) {
 		if (loop - start >= count) {
-			printk(KERN_INFO "duet:   Buckets %lu - %lu: %llu nodes (task: %llu)\n",
+			pr_info("duet:   Buckets %lu - %lu: %llu nodes (task: %llu)\n",
 				start, end, nodes, tnodes);
 			start = end = loop;
 			nodes = tnodes = 0;
@@ -338,12 +312,6 @@ void hash_print(struct duet_task *task)
 	}
 
 	if (start != loop - 1)
-		printk(KERN_INFO "duet:   Buckets %lu - %lu: %llu nodes (task: %llu)\n",
+		pr_info("duet:   Buckets %lu - %lu: %llu nodes (task: %llu)\n",
 			start, end, nodes, tnodes);
-
-#ifdef CONFIG_DUET_STATS
-	printk(KERN_INFO "duet: %lu (%lu/%lu) lookups per request on average\n",
-		duet_env.itm_stat_num ? (duet_env.itm_stat_lkp / duet_env.itm_stat_num) : 0,
-		duet_env.itm_stat_lkp, duet_env.itm_stat_num);
-#endif /* CONFIG_DUET_STATS */
 }
