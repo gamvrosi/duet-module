@@ -356,7 +356,8 @@ static int duet_task_init(struct duet_task **task, char *name, __u32 regmask,
 
 	/* Do some sanity checking on event mask. */
 	if (evtmask & DUET_PAGE_EXISTS) {
-		if (evtmask & (DUET_PAGE_ADDED | DUET_PAGE_REMOVED)) {
+		if (evtmask & (DUET_PAGE_ADDED | DUET_PAGE_REMOVED | \
+		               DUET_LEVEL_ADDED)) {
 			pr_debug("duet_task_init: invalid regmask\n");
 			return -EINVAL;
 		}
@@ -364,9 +365,28 @@ static int duet_task_init(struct duet_task **task, char *name, __u32 regmask,
 	}
 
 	if (evtmask & DUET_PAGE_MODIFIED) {
-		if (evtmask & (DUET_PAGE_DIRTY | DUET_PAGE_FLUSHED)) {
+		if (evtmask & (DUET_PAGE_DIRTY | DUET_PAGE_FLUSHED | \
+		               DUET_LEVEL_DIRTY)) {
 			pr_debug("duet_task_init: invalid regmask\n");
-			goto err;
+			return -EINVAL;
+		}
+		evtmask |= (DUET_PAGE_DIRTY | DUET_PAGE_FLUSHED);
+	}
+
+	if (evtmask & DUET_LEVEL_ADDED) {
+		if (evtmask & (DUET_PAGE_ADDED | DUET_PAGE_REMOVED | \
+		               DUET_PAGE_EXISTS)) {
+			pr_debug("duet_task_init: invalid regmask\n");
+			return -EINVAL;
+		}
+		evtmask |= (DUET_PAGE_ADDED | DUET_PAGE_REMOVED);
+	}
+
+	if (evtmask & DUET_LEVEL_DIRTY) {
+		if (evtmask & (DUET_PAGE_DIRTY | DUET_PAGE_FLUSHED | \
+		               DUET_PAGE_MODIFIED)) {
+			pr_debug("duet_task_init: invalid regmask\n");
+			return -EINVAL;
 		}
 		evtmask |= (DUET_PAGE_DIRTY | DUET_PAGE_FLUSHED);
 	}
