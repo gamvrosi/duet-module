@@ -130,11 +130,11 @@ int hash_add(struct duet_task *task, struct duet_uuid uuid, unsigned long idx,
 		curmask |= evtmask | DUET_MASK_VALID;
 
 		/* Negate previous events and remove if needed */
-		if ((task->evtmask & DUET_PAGE_EXISTS) &&
-		   ((curmask & DUET_COMBO_EXISTS) == DUET_COMBO_EXISTS))
+		if ((task->evtmask & (DUET_PAGE_EXISTS | DUET_LEVEL_ADDED)) &&
+		    ((curmask & DUET_COMBO_EXISTS) == DUET_COMBO_EXISTS))
 			curmask &= ~DUET_COMBO_EXISTS;
 
-		if ((task->evtmask & DUET_PAGE_MODIFIED) &&
+		if ((task->evtmask & (DUET_PAGE_MODIFIED | DUET_LEVEL_DIRTY)) &&
 		   ((curmask & DUET_COMBO_MODIFIED) == DUET_COMBO_MODIFIED))
 			curmask &= ~DUET_COMBO_MODIFIED;
 
@@ -219,7 +219,7 @@ again:
 		}
 	}
 
-	task->bmap_cursor = bnum;
+	task->bmap_cursor = (bnum + 1) % duet_env.itm_hash_size;
 	clear_bit(bnum, task->bucket_bmap);
 	spin_unlock(&task->bbmap_lock);
 	b = duet_env.itm_hash_table + bnum;
@@ -240,13 +240,26 @@ again:
 			itm->state = itnode->state[task->id] &
 				     (~DUET_MASK_VALID);
 
-			itnode->refcount--;
-			/* Free or update node */
+			/* Update node state */
+			itnode->state[task->id] = 0;
+
+			if ((itm->state & DUET_PAGE_ADDED) &&
+			    (task->evtmask & DUET_LEVEL_ADDED))
+				itnode->state[task->id] |= DUET_PAGE_ADDED;
+
+			if ((itm->state & DUET_PAGE_DIRTY) &&
+			    (task->evtmask & DUET_LEVEL_DIRTY))
+				itnode->state[task->id] |= DUET_PAGE_DIRTY;
+
+			/* Update node refcount and free if needed */
+			if (!itnode->state[task->id])
+				itnode->refcount--;
+			else
+				itnode->state[task->id] |= DUET_MASK_VALID;
+
 			if (!itnode->refcount) {
 				hlist_bl_del(n);
 				hnode_destroy(itnode);
-			} else {
-				itnode->state[task->id] = 0;
 			}
 
 			found = 1;
