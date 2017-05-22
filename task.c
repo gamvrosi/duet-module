@@ -18,6 +18,7 @@
 
 #include <linux/poll.h>
 #include <linux/anon_inodes.h>
+#include <linux/sched/signal.h>
 #include "common.h"
 
 /* putname copy from kernel */

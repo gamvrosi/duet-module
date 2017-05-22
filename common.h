@@ -24,6 +24,7 @@
 #include <linux/mount.h>
 #include <linux/vmalloc.h>
 #include <linux/list_bl.h>
+#include <linux/sched.h>
 
 #ifdef DUET_DEBUG
 #define duet_dbg(...)	pr_info(__VA_ARGS__)
